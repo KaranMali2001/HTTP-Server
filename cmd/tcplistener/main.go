@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"net"
+
+	"github.com/KaranMali2001/Http-Server/internal/request"
 )
 
 // 1) read file 8 byte at time
@@ -17,56 +17,59 @@ import (
 //
 // 3) create a getLinesChannel so that we can reuse it later
 // 4) instead of reading through file listen from http stream
-func getLinesChannel(f io.ReadCloser) <-chan string {
-	out := make(chan string, 1)
-	go func() {
-		defer f.Close()
-		defer close(out)
-		buf := make([]byte, 8)
-		var line []byte
-		for {
-			n, err := f.Read(buf)
-			if err != nil {
-				if err == io.EOF {
-					//here we need to check that if file has any left over content
-					if len(line) > 0 {
-						out <- string(line)
-					}
-					// fmt.Print("File reading Done ")
-					break
-				}
+// 5) we have parsed the request by reading all the data at once
+// 6) then we improved our function to read byte stream then handle cases where we dont receive complete data at once
+// 7) now we need to connect our parse to tcp listener so that we can actually parse the curl req
+// func getLinesChannel(f io.ReadCloser) <-chan string {
+// 	out := make(chan string, 1)
+// 	go func() {
+// 		defer f.Close()
+// 		defer close(out)
+// 		buf := make([]byte, 8)
+// 		var line []byte
+// 		for {
+// 			n, err := f.Read(buf)
+// 			if err != nil {
+// 				if err == io.EOF {
+// 					//here we need to check that if file has any left over content
+// 					if len(line) > 0 {
+// 						out <- string(line)
+// 					}
+// 					// fmt.Print("File reading Done ")
+// 					break
+// 				}
 
-				log.Fatalf("error while reading file %v\n", err)
-				break
-			}
-			//now we got some bytes and n is number of byte
-			// first we will check do we have any bytes or not
-			if n > 0 {
-				//if we have some bytes , we will get index of \n
-				//store those bytes in some variable
-				data := buf[:n] // we are doing this because if we dont have exact 8 byte then we might get some random character
-				//we need to loop over the data
-				for len(data) > 0 {
+// 				log.Fatalf("error while reading file %v\n", err)
+// 				break
+// 			}
+// 			//now we got some bytes and n is number of byte
+// 			// first we will check do we have any bytes or not
+// 			if n > 0 {
+// 				//if we have some bytes , we will get index of \n
+// 				//store those bytes in some variable
+// 				data := buf[:n] // we are doing this because if we dont have exact 8 byte then we might get some random character
+// 				//we need to loop over the data
+// 				for len(data) > 0 {
 
-					i := bytes.IndexByte(data, '\n')
-					//indexByte return -1 if it does not find given string so check that
-					if i == -1 {
-						// we havent found a new line so just append to line
-						// line = append(line, data) -> compile time error because append expect single element and data is array of byte
-						line = append(line, data...)
-						break
-					}
-					line = append(line, data[:i]...)
-					out <- string(line)
-					line = line[:0]
-					data = data[i+1:]
-				}
-			}
-		}
+// 					i := bytes.IndexByte(data, '\n')
+// 					//indexByte return -1 if it does not find given string so check that
+// 					if i == -1 {
+// 						// we havent found a new line so just append to line
+// 						// line = append(line, data) -> compile time error because append expect single element and data is array of byte
+// 						line = append(line, data...)
+// 						break
+// 					}
+// 					line = append(line, data[:i]...)
+// 					out <- string(line)
+// 					line = line[:0]
+// 					data = data[i+1:]
+// 				}
+// 			}
+// 		}
 
-	}()
-	return out
-}
+// 	}()
+// 	return out
+// }
 
 func main() {
 	listenr, err := net.Listen("tcp", ":8080")
@@ -81,8 +84,13 @@ func main() {
 		if err != nil {
 			log.Fatal("error while accepting the lister", err)
 		}
-		for line := range getLinesChannel(conn) {
-			fmt.Println("Line is", line)
+		r, err := request.RequestFromReader(conn)
+		if err != nil {
+			log.Fatal("error while reading req from reader", err)
 		}
+		fmt.Println("Requst Line ")
+		fmt.Println("Method ", r.RequestLine.Method)
+		fmt.Println("Target ", r.RequestLine.RequestTarget)
+		fmt.Println("Version ", r.RequestLine.HttpVersion)
 	}
 }
